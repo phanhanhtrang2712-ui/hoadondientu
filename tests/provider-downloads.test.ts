@@ -13,6 +13,7 @@ import JSZip from 'jszip';
 import { OriginalInvoiceError } from '../src/services/invoice-engine/OriginalInvoiceError';
 import { EASY_INVOICE_PRINT_STYLE_ID, prepareEasyInvoiceHtml } from '../src/utils/easyInvoicePrint';
 import { verifyPmktBridgeToken } from '../src/utils/pmktBridgeAuth';
+import { downloadOriginalBkavPdf } from '../src/services/bkavInvoiceService';
 
 const realFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = realFetch; });
@@ -228,6 +229,40 @@ test('XML solution evidence overrides stale MISA label and seller-based guesses'
   assert.equal(isMisaSource({ nbmst: '0400557356', lookupUrl: 'https://einvoice.vn' }), false);
   assert.equal(resolveInvoiceProvider({ msttcgp: '0101300842', lookupUrl: 'https://meinvoice.vn', provider: 'MISA' }), 'THAISON');
   assert.equal(resolveInvoiceProvider({ rawXml: '<HDon><Website>www.meinvoice.vn/tra-cuu</Website></HDon>' }), 'MISA');
+});
+
+test('Bkav XML upload posts the invoice file and downloads the returned PDF', async () => {
+  let calls = 0;
+  globalThis.fetch = async (input, init) => {
+    calls++;
+    const url = new URL(String(input));
+    if (calls === 1) {
+      assert.equal(url.pathname, '/TCHD');
+      return new Response(
+        '<form><input name="__VIEWSTATE" value="STATE1"/><input name="__VIEWSTATEGENERATOR" value="GEN1"/><input name="ctl00$bodySearch$lookupBase$hdfIsXML" value="false"/></form>',
+        { headers: { 'set-cookie': 'ASP.NET_SessionId=test-cookie' } }
+      );
+    }
+    if (calls === 2) {
+      assert.equal(init?.method, 'POST');
+      assert.ok(init?.body instanceof FormData);
+      assert.equal((init?.body as FormData).get('ctl00$bodySearch$lookupBase$hdfIsXML'), 'true');
+      assert.equal((init?.body as FormData).get('g-recaptcha-response'), 'valid-bkav-token');
+      assert.ok((init?.body as FormData).get('ctl00$bodySearch$lookupBase$fuXMLUpload') instanceof Blob);
+      return new Response('<a href="/Invoice_View/HoaDon.pdf">PDF</a>');
+    }
+    assert.equal(url.pathname, '/Invoice_View/HoaDon.pdf');
+    return new Response('%PDF-1.7\nbkav-fixture', { headers: { 'content-type': 'application/pdf' } });
+  };
+
+  const result = await downloadOriginalBkavPdf({
+    xml: '<HDon><MSTTCGP>0101360697</MSTTCGP></HDon>',
+    recaptchaToken: 'valid-bkav-token'
+  });
+  assert.equal(calls, 3);
+  assert.equal(result.contentType, 'application/pdf');
+  assert.equal(result.filename, 'HoaDon_Bkav_XML.pdf');
+  assert.equal(result.data.subarray(0, 4).toString(), '%PDF');
 });
 
 test('certificate issuer and seller alone do not identify invoice provider', () => {

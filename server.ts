@@ -1795,9 +1795,11 @@ app.post('/api/invoice-downloader/download', async (req, res) => {
       });
     }
 
-    if (!forceFallback && requestedProvider === 'BKAV' && customInfo?.lookupCode) {
+    if (!forceFallback && requestedProvider === 'BKAV' && (customInfo?.lookupCode || xml)) {
       const bkav = await downloadOriginalBkavPdf({
-        lookupCode: String(customInfo.lookupCode).trim(),
+        lookupCode: customInfo?.lookupCode ? String(customInfo.lookupCode).trim() : undefined,
+        xml,
+        recaptchaToken: recaptchaToken ? String(recaptchaToken).trim() : undefined,
         timeoutMs: timeoutMs ? Number(timeoutMs) : undefined
       });
       if (req.query.format === 'binary') {

@@ -7,6 +7,7 @@ import { BaseInvoiceProviderDriver } from './InvoiceProviderDriver';
 import { ExtractedInvoiceInfo, DownloadResult, DownloadOptions, DriverMetadata } from '../types';
 import { detectProvider } from '../providerDetector';
 import { GenericFallbackDriver } from './GenericFallbackDriver';
+import { downloadOriginalBkavPdf } from '../../bkavInvoiceService';
 
 export class BkavDriver extends BaseInvoiceProviderDriver {
   readonly name = 'Bkav eHoadon Driver';
@@ -66,6 +67,31 @@ export class BkavDriver extends BaseInvoiceProviderDriver {
     if (info.lookupCode) {
       this.createLog(`Mã tra cứu Bkav: "${info.lookupCode}"`, logs);
       this.createLog(`Cổng mở hóa đơn trực tiếp: ${info.lookupUrl || 'https://tchd.ehoadon.vn/TCHD'}`, logs);
+    }
+    if (info.lookupCode || info.rawXml) {
+      try {
+        const original = await downloadOriginalBkavPdf({
+          lookupCode: info.lookupCode,
+          xml: info.lookupCode ? undefined : info.rawXml,
+          recaptchaToken: options?.recaptchaToken,
+          timeoutMs: options?.timeoutMs
+        });
+        this.createLog(`Tải bản gốc BKAV thành công: ${original.filename}`, logs);
+        return {
+          success: true,
+          provider: this.providerCode,
+          driverName: this.name,
+          pdfBuffer: original.data,
+          pdfBase64: original.data.toString('base64'),
+          contentType: original.contentType,
+          filename: original.filename,
+          isFallback: false,
+          sourceUrl: info.lookupUrl,
+          executionLogs: logs
+        };
+      } catch (error: any) {
+        this.createLog(`Không tải được bản gốc BKAV: ${error.message}`, logs);
+      }
     }
     this.createLog(`Tạo bản thể hiện PDF & HTML/CSS chuẩn Nghị định 123 / Quyết định 1450/TCT`, logs);
     
