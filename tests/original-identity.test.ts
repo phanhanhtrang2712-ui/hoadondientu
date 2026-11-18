@@ -13,7 +13,20 @@ test('Correct provider PDF must match seller, invoice number and series', async 
   pdf.text('Ky hieu: C26MCM', 20, 44);
   pdf.text('So: 323797', 20, 56);
   const bytes = Buffer.from(pdf.output('arraybuffer'));
-  assert.equal((await verifyIssuerInvoiceBytes(bytes, 'application/pdf', identity)).ok, true);
+  const domMatrix = Object.getOwnPropertyDescriptor(globalThis, 'DOMMatrix');
+  try {
+    if (!domMatrix || domMatrix.configurable) {
+      Object.defineProperty(globalThis, 'DOMMatrix', {
+        configurable: true, value: undefined, writable: true
+      });
+    }
+    const result = await verifyIssuerInvoiceBytes(bytes, 'application/pdf', identity);
+    assert.equal(result.ok, true);
+    assert.equal(typeof globalThis.DOMMatrix, 'function');
+  } finally {
+    if (domMatrix) Object.defineProperty(globalThis, 'DOMMatrix', domMatrix);
+    else Reflect.deleteProperty(globalThis, 'DOMMatrix');
+  }
   assert.equal((await verifyIssuerInvoiceBytes(bytes, 'application/pdf', {
     ...identity, invoiceNo: '2996339'
   })).ok, false);
