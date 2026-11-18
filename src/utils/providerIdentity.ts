@@ -49,18 +49,6 @@ export function isSaigonCoopPortalUrl(input: string | undefined): boolean {
   return new URL(normalized).hostname.toLowerCase() === 'saigoncoop.einvoice.com.vn';
 }
 
-export function buildSaigonCoopPrefillUrl(portalUrl: string | undefined, lookupCode: string | undefined): string {
-  const normalized = normalizeThaiSonPortalUrl(portalUrl);
-  if (!normalized || !isSaigonCoopPortalUrl(normalized)) return '';
-  const url = new URL(normalized);
-  url.hash = '';
-  const code = String(lookupCode || '').trim();
-  if (/^[A-Za-z0-9._-]{5,128}$/.test(code)) {
-    url.hash = new URLSearchParams({ hms_thaison_code: code }).toString();
-  }
-  return url.toString();
-}
-
 export function isTrustedThaiSonPortalUrl(value: string): boolean {
   try {
     const url = new URL(value);

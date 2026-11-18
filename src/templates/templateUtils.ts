@@ -1,9 +1,5 @@
 import { GDTInvoice } from '../types';
-import {
-  buildSaigonCoopPrefillUrl,
-  providerFromPortal,
-  easyInvoiceLookupUrl
-} from '../utils/providerIdentity';
+import { providerFromPortal, easyInvoiceLookupUrl } from '../utils/providerIdentity';
 import { extractLookupDetailsFromXml, numberToVietnameseWords } from '../utils/xmlParser';
 
 export { numberToVietnameseWords };
@@ -123,9 +119,6 @@ export function buildDirectLookupUrl(
   // XML portal or redirect its customers to the generic Thai Son portal.
   if (portalProvider === 'THAISON' && url) {
     const parsed = new URL(url);
-    if (parsed.hostname === 'saigoncoop.einvoice.com.vn') {
-      return buildSaigonCoopPrefillUrl(url, code) || url;
-    }
     if (parsed.hostname !== 'einvoice.vn' && parsed.hostname !== 'www.einvoice.vn') {
       return url;
     }

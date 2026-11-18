@@ -39,7 +39,7 @@ test('Co.opmart XML carries a seller-scoped lookup URL and Ma TC code', () => {
   });
   assert.equal(detectProvider(xml), 'THAISON');
   assert.equal(buildDirectLookupUrl('https://saigoncoop.einvoice.com.vn/xem-hoa-don', '4CZHQ4L0EYY', 'THAISON', '0301175691-021'),
-    'https://saigoncoop.einvoice.com.vn/xem-hoa-don#hms_thaison_code=4CZHQ4L0EYY');
+    'https://saigoncoop.einvoice.com.vn/xem-hoa-don');
   const otherSeller = '<HDon><DLHDon><TTChung><MSTTCGP>0101300842</MSTTCGP></TTChung><NDHDon><NBan><MST>0123456789</MST></NBan></NDHDon></DLHDon></HDon>';
   assert.notEqual(extractLookupDetailsFromXml(otherSeller).lookupUrl, 'https://saigoncoop.einvoice.com.vn/xem-hoa-don');
 });
@@ -77,8 +77,7 @@ test('Thai Son Co.opmart driver retains tenant portal and unique lookup code', (
   assert.equal(info.lookupCode, '4CZHQ4L0EYY');
   assert.equal(info.lookupUrl, 'https://saigoncoop.einvoice.com.vn/');
   assert.equal(resolveInvoiceProvider({ rawXml: xml, nbmst: '0301175691-021' }), 'THAISON');
-  assert.equal(buildDirectLookupUrl(info.lookupUrl, info.lookupCode, 'THAISON', info.sellerTaxCode),
-    info.lookupUrl + '#hms_thaison_code=4CZHQ4L0EYY');
+  assert.equal(buildDirectLookupUrl(info.lookupUrl, info.lookupCode, 'THAISON', info.sellerTaxCode), info.lookupUrl);
 });
 
 test('Thai Son XML without DCTC does not invent a seller portal', () => {

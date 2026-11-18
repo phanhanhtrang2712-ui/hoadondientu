@@ -343,12 +343,18 @@ export const InvoiceTable: React.FC<InvoiceTableProps> = ({
                             const pBadge = getInvoiceProviderBadge(inv);
                             const isViettel = pBadge.label === 'Viettel';
                             const isMisa = pBadge.label === 'Misa';
+                            const isSaigonCoop = /saigoncoop\.einvoice\.com\.vn/i.test(inv.lookupUrl || '');
                             return (
                               <>
                                 <span className="text-gray-400">
                                   {isViettel ? 'Mã bí mật:' : 'Mã TC:'}
                                 </span>
-                                <a
+                                {isSaigonCoop ? (
+                                  <span className="text-emerald-700 font-bold"
+                                    title="Bấm vào hóa đơn để tra cứu trong phần mềm">
+                                    {inv.lookupCode}
+                                  </span>
+                                ) : <a
                                   href={buildDirectLookupUrl(inv.lookupUrl, inv.lookupCode, inv.provider, inv.nbmst)}
                                   target="_blank"
                                   rel="noopener noreferrer"
@@ -371,7 +377,7 @@ export const InvoiceTable: React.FC<InvoiceTableProps> = ({
                                 >
                                   <span>{inv.lookupCode}</span>
                                   <ExternalLink className="w-2.5 h-2.5 opacity-70" />
-                                </a>
+                                </a>}
                               </>
                             );
                           })()}
@@ -479,8 +485,10 @@ export const InvoiceTable: React.FC<InvoiceTableProps> = ({
                           const is4Si = pBadge.label === '4Si' || /4si|lcssoft|dochoadon/i.test(directUrl) || inv.msttcgp === '0315744883' || inv.msttcgp === '0302999571' || (inv.provider || '').toUpperCase().includes('4SI');
                           const isBkav = pBadge.label === 'Bkav' || /bkav|ehoadon/i.test(directUrl);
                           const isThaiSon = pBadge.label === 'Thái Sơn' || /einvoice\.vn|thaison/i.test(directUrl);
+                          const isSaigonCoop = /saigoncoop\.einvoice\.com\.vn/i.test(directUrl);
                           const isCyberBill = pBadge.label === 'CyberBill' || /cyberbill/i.test(directUrl);
                           const isVcb = inv.nbmst === '0100112437' || /vietcombank/i.test(inv.nbten || '');
+                          if (isSaigonCoop) return null;
                           return (
                             <a
                               href={is4Si && !directUrl.includes('inv.4si.vn') ? 'https://dochoadon.lcssoft.com.vn/' : directUrl}

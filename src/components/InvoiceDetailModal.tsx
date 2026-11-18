@@ -27,7 +27,6 @@ import {
 } from '../utils/multiTemplateRenderer';
 import { buildDirectLookupUrl, openVnptDirectPortal } from '../templates/templateUtils';
 import {
-  buildSaigonCoopPrefillUrl,
   easyInvoiceLookupPortals,
   easyInvoiceLookupUrl,
   isSaigonCoopPortalUrl,
@@ -38,7 +37,9 @@ import { ensureInvoiceItems, hasGenuineItems, extractTagValue, parseGDTInvoiceXm
 import { resolveInvoiceProvider } from '../utils/providerRouting';
 import { loadOriginalInvoice } from '../services/originalInvoiceLoader';
 import { fetchVisnamCaptcha, fetchVisnamInvoicePdf } from '../services/visnamClient';
+import { fetchSaigonCoopCaptcha, submitSaigonCoopLookup } from '../services/saigonCoopClient';
 import { VisnamCaptchaModal } from './VisnamCaptchaModal';
+import { SaigonCoopCaptchaModal } from './SaigonCoopCaptchaModal';
 import { prepareEasyInvoiceHtml } from '../utils/easyInvoicePrint';
 import { useNotification } from '../context/NotificationContext';
 
@@ -152,6 +153,11 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
     setVisnamCaptchaError(null);
     setIsLoadingVisnamCaptcha(false);
     setIsSubmittingVisnamCaptcha(false);
+    setIsSaigonCoopCaptchaOpen(false);
+    setSaigonCoopCaptcha(null);
+    setSaigonCoopCaptchaError(null);
+    setIsLoadingSaigonCoopCaptcha(false);
+    setIsSubmittingSaigonCoopCaptcha(false);
     if (originalProviderPdfUrl) {
       window.URL.revokeObjectURL(originalProviderPdfUrl);
       setOriginalProviderPdfUrl(null);
@@ -186,6 +192,11 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
   const [isLoadingVisnamCaptcha, setIsLoadingVisnamCaptcha] = useState(false);
   const [isSubmittingVisnamCaptcha, setIsSubmittingVisnamCaptcha] = useState(false);
   const [visnamCaptchaError, setVisnamCaptchaError] = useState<string | null>(null);
+  const [isSaigonCoopCaptchaOpen, setIsSaigonCoopCaptchaOpen] = useState(false);
+  const [saigonCoopCaptcha, setSaigonCoopCaptcha] = useState<{ state: string; image: string } | null>(null);
+  const [saigonCoopCaptchaError, setSaigonCoopCaptchaError] = useState<string | null>(null);
+  const [isLoadingSaigonCoopCaptcha, setIsLoadingSaigonCoopCaptcha] = useState(false);
+  const [isSubmittingSaigonCoopCaptcha, setIsSubmittingSaigonCoopCaptcha] = useState(false);
   const [thaiSonPortalRevision, setThaiSonPortalRevision] = useState(0);
   const [easyInvoiceDownloadStatus, setEasyInvoiceDownloadStatus] = useState<string | null>(null);
   const [originalLoadError, setOriginalLoadError] = useState<string | null>(null);
@@ -808,6 +819,91 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
     setIsSubmittingVisnamCaptcha(false);
   };
 
+  const saigonCoopLookupCode = (target: GDTInvoice) =>
+    String(extractLookupDetails(target.rawXml).lookupCode || target.lookupCode || '').trim();
+
+  const handleSaigonCoopCaptchaOpen = async () => {
+    if (!effectiveInvoice) return;
+    const target = effectiveInvoice;
+    const lookupCode = saigonCoopLookupCode(target);
+    if (!lookupCode) {
+      setOriginalLoadError('Không tìm thấy mã nhận hóa đơn trong XML.');
+      return;
+    }
+
+    const sequence = ++originalLoadSequence.current;
+    setOriginalLoadError(null);
+    setSaigonCoopCaptchaError(null);
+    setSaigonCoopCaptcha(null);
+    setIsSaigonCoopCaptchaOpen(true);
+    setIsLoadingSaigonCoopCaptcha(true);
+    try {
+      const challenge = await fetchSaigonCoopCaptcha(lookupCode);
+      if (openInvoiceIdRef.current !== target.id || originalLoadSequence.current !== sequence) return;
+      setSaigonCoopCaptcha(challenge);
+    } catch (error) {
+      if (openInvoiceIdRef.current === target.id && originalLoadSequence.current === sequence) {
+        setSaigonCoopCaptchaError(error instanceof Error ? error.message : 'Không tải được CAPTCHA Saigon Co.op.');
+      }
+    } finally {
+      if (openInvoiceIdRef.current === target.id && originalLoadSequence.current === sequence) {
+        setIsLoadingSaigonCoopCaptcha(false);
+      }
+    }
+  };
+
+  const handleSaigonCoopCaptchaSubmit = async (captcha: string) => {
+    if (!effectiveInvoice || !saigonCoopCaptcha || !captcha.trim()) return;
+    const target = effectiveInvoice;
+    const sequence = originalLoadSequence.current;
+    const lookupCode = saigonCoopLookupCode(target);
+    setSaigonCoopCaptchaError(null);
+    setIsSubmittingSaigonCoopCaptcha(true);
+    setIsDownloadingEasyInvoice(true);
+    setEasyInvoiceDownloadStatus('Đang tra cứu hóa đơn Saigon Co.op...');
+    try {
+      const result = await submitSaigonCoopLookup({
+        state: saigonCoopCaptcha.state,
+        lookupCode,
+        captcha,
+        sellerTaxCode: String(target.nbmst || extractTagValue(target.rawXml || '', 'MST') || '').trim(),
+        invoiceNo: String(target.shdon || extractTagValue(target.rawXml || '', 'SHDon') || '').trim(),
+        invoiceSeries: String(target.khhdon || extractTagValue(target.rawXml || '', 'KHHDon') || '').trim(),
+      });
+      if (openInvoiceIdRef.current !== target.id || originalLoadSequence.current !== sequence) return;
+
+      if (result.kind === 'html') {
+        setOriginalEasyInvoiceHtml(result.html);
+        setEasyInvoiceViewMode('html');
+      } else {
+        setOriginalProviderPdfUrl(URL.createObjectURL(result.blob));
+      }
+      setIsSaigonCoopCaptchaOpen(false);
+      setSaigonCoopCaptcha(null);
+      setOriginalLoadError(null);
+      setEasyInvoiceDownloadStatus('Đã xác minh hóa đơn Saigon Co.op với dữ liệu XML.');
+    } catch (error) {
+      if (openInvoiceIdRef.current === target.id && originalLoadSequence.current === sequence) {
+        setSaigonCoopCaptcha(null);
+        setSaigonCoopCaptchaError(error instanceof Error ? error.message : 'Không tra cứu được hóa đơn Saigon Co.op.');
+      }
+    } finally {
+      if (openInvoiceIdRef.current === target.id && originalLoadSequence.current === sequence) {
+        setIsSubmittingSaigonCoopCaptcha(false);
+        setIsDownloadingEasyInvoice(false);
+      }
+    }
+  };
+
+  const closeSaigonCoopCaptcha = () => {
+    originalLoadSequence.current++;
+    setIsSaigonCoopCaptchaOpen(false);
+    setSaigonCoopCaptcha(null);
+    setSaigonCoopCaptchaError(null);
+    setIsLoadingSaigonCoopCaptcha(false);
+    setIsSubmittingSaigonCoopCaptcha(false);
+  };
+
   const handleViewOriginalProvider = async () => {
     if (!effectiveInvoice) return;
     const target = effectiveInvoice;
@@ -819,10 +915,7 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
     const tenantUrl = sellerPortal && isGenericThaiSon ? sellerPortal : recordedPortal;
     const isSeparatePortal = actualProvider === 'IHOADON';
     if (actualProvider === 'THAISON' && isSaigonCoopPortalUrl(tenantUrl)) {
-      const portalUrl = buildSaigonCoopPrefillUrl(
-        tenantUrl, extractedLookup.lookupCode || target.lookupCode
-      );
-      window.open(portalUrl || tenantUrl, '_blank', 'noopener,noreferrer');
+      void handleSaigonCoopCaptchaOpen();
       return;
     }
     // Open the actual issuer portal. No verified server-side PDF API exists
@@ -1063,9 +1156,6 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
     !/^https?:\/\/(?:www\.)?einvoice\.vn(?:\/|$)/i.test(lookupDetails.lookupUrl)
     ? lookupDetails.lookupUrl : '';
   const isSaigonCoopPortal = isSaigonCoopPortalUrl(thaiSonIssuerPortal);
-  const saigonCoopPrefillUrl = buildSaigonCoopPrefillUrl(
-    thaiSonIssuerPortal, lookupDetails.lookupCode || effectiveInvoice.lookupCode
-  );
   const configureThaiSonPortal = () => {
     if (!effectiveInvoice?.nbmst) return;
     const proposed = window.prompt('Nhập URL cổng tra cứu hóa đơn chính thức của người bán (lưu dùng lại theo MST):', '');
@@ -1896,25 +1986,26 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
                 {thaiSonIssuerPortal ? (
                   <>
                     {isSaigonCoopPortal ? (
-                      <div className="inline-flex items-center gap-2 flex-wrap">
-                        <a href={saigonCoopPrefillUrl || thaiSonIssuerPortal}
-                          target="_blank" rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md border border-cyan-700 text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900">
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          Mở cổng Saigon Co.op, nhập CAPTCHA
-                        </a>
-                        <span className="text-[11px] text-slate-400">
-                          Cài tiện ích HoangMySoft một lần để tự điền mã; CAPTCHA nhập thủ công.
-                        </span>
-                      </div>
-                    ) : !originalProviderPdfUrl && !originalEasyInvoiceHtml && (
+                      !originalEasyInvoiceHtml && !originalProviderPdfUrl ? (
+                        <button type="button" onClick={() => void handleSaigonCoopCaptchaOpen()}
+                          disabled={isLoadingSaigonCoopCaptcha || isSubmittingSaigonCoopCaptcha}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md border border-cyan-700 text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900 disabled:opacity-60">
+                          {isLoadingSaigonCoopCaptcha || isSubmittingSaigonCoopCaptcha
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <Eye className="w-3.5 h-3.5" />}
+                          {isLoadingSaigonCoopCaptcha || isSubmittingSaigonCoopCaptcha
+                            ? 'Đang tra cứu...'
+                            : 'Tra cứu trong ứng dụng'}
+                        </button>
+                      ) : null
+                    ) : !originalProviderPdfUrl && !originalEasyInvoiceHtml ? (
                       <button type="button" onClick={handleViewOriginalProvider}
                         disabled={isDownloadingEasyInvoice}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md border border-cyan-700 text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900 disabled:opacity-60">
                         {isDownloadingEasyInvoice ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                         <span>{isDownloadingEasyInvoice ? 'Đang tải bản gốc...' : 'Tải bản gốc Thái Sơn'}</span>
                       </button>
-                    )}
+                    ) : null}
                     {originalEasyInvoiceHtml && (
                       <button type="button" onClick={handlePrintHtml}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border border-teal-700 text-teal-200 hover:bg-teal-950/70">
@@ -1939,7 +2030,8 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
                   </button>
                 )}
               </div>
-            ) : (directLookupUrl && (!isVnpayInvoice || Boolean(lookupDetails.lookupCode))) ? (
+            ) : (!isSaigonCoopPortal && directLookupUrl &&
+                (!isVnpayInvoice || Boolean(lookupDetails.lookupCode))) ? (
               <a
                 href={directLookupUrl}
                 target="_blank"
@@ -2007,6 +2099,17 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
         }}
         onCancel={closeVisnamCaptcha}
         onSubmit={handleVisnamCaptchaSubmit}
+      />
+      <SaigonCoopCaptchaModal
+        isOpen={isSaigonCoopCaptchaOpen}
+        lookupCode={effectiveInvoice ? saigonCoopLookupCode(effectiveInvoice) : ''}
+        image={saigonCoopCaptcha?.image || ''}
+        loading={isLoadingSaigonCoopCaptcha}
+        submitting={isSubmittingSaigonCoopCaptcha}
+        error={saigonCoopCaptchaError}
+        onRefresh={() => void handleSaigonCoopCaptchaOpen()}
+        onSubmit={captcha => void handleSaigonCoopCaptchaSubmit(captcha)}
+        onClose={closeSaigonCoopCaptcha}
       />
     </div>
   );

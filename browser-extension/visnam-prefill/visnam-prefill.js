@@ -2,16 +2,12 @@
   'use strict';
   // Only prefill the issuer's actual lookup form, never its XML verification
   // form or CAPTCHA. The extension does not submit the form or fetch invoices.
-  const host = location.hostname.toLowerCase();
-  const isSaigonCoop = host === 'saigoncoop.einvoice.com.vn';
-  const isVisnam = host === 'tracuu.vin-hoadon.com' &&
-    location.pathname.replace(/\/+$/, '').toLowerCase() ===
-      '/tracuuhoadon/tracuuxacthuc/tracuuhd';
-  if (!isSaigonCoop && !isVisnam) return;
+  if (location.pathname.replace(/\/+$/, '').toLowerCase() !==
+      '/tracuuhoadon/tracuuxacthuc/tracuuhd') return;
 
   const params = new URLSearchParams(location.hash.replace(/^#/, ''));
-  const code = String(params.get(isSaigonCoop ? 'hms_thaison_code' : 'hms_visnam_code') || '').trim();
-  if (!/^[A-Za-z0-9._-]{5,128}$/.test(code)) return;
+  const code = String(params.get('hms_visnam_code') || '').trim();
+  if (!/^[A-Za-z0-9_-]{6,64}$/.test(code)) return;
 
   const normalize = s => String(s || '').normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd')
@@ -29,13 +25,6 @@
 
   const choose = () => {
     const inputs = [...document.querySelectorAll('input')].filter(visible);
-    if (isSaigonCoop) {
-      const lookupInputs = inputs.filter(el =>
-        el.name.toUpperCase() === 'MA_NHAN_HOA_DON' || el.id.toUpperCase() === 'MA_NHAN_HOA_DON'
-      );
-      return lookupInputs.length === 1 ? lookupInputs[0] : null;
-    }
-
     // The observed VIN-HOADON page has a text input with placeholder
     // "Mã số bí mật" and a separate "Nhập mã xác thực" CAPTCHA field.
     // Prefer a unique exact placeholder match; never inspect a shared

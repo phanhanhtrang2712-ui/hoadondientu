@@ -23,6 +23,7 @@ import { lookupVnpayInvoice, downloadOriginalVnpayPdf, downloadOriginalVnpayXml,
 import { renderFourSiPdfViaLcs, FOUR_SI_LCS_READER_URL, FOUR_SI_PORTAL_URL, isFourSiInvoice } from './src/services/fourSiInvoiceService';
 import { downloadOriginalCyberbillPdf } from './src/services/cyberbillInvoiceService';
 import { downloadOriginalThaiSonPdf, downloadOriginalThaiSonXml } from './src/services/thaiSonInvoiceService';
+import { createSaigonCoopManualCaptcha, submitSaigonCoopManualLookup } from './src/services/saigonCoopInvoiceService';
 import { downloadOriginalBkavPdf } from './src/services/bkavInvoiceService';
 import { VISNAM_RAPIDSSL_INTERMEDIATE } from './src/services/visnamCertificate';
 import { resolveInvoiceProvider } from './src/utils/providerRouting';
@@ -3174,6 +3175,51 @@ app.all('/api/cyberbill/download-pdf', async (req, res) => {
   } catch (error: any) {
     console.error('[CyberBill] Lỗi tải PDF gốc:', error.message);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/saigoncoop/captcha', async (req, res) => {
+  try {
+    const challenge = await createSaigonCoopManualCaptcha(req.body?.lookupCode);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ success: true, ...challenge });
+  } catch (error: any) {
+    const status = Number(error?.status);
+    console.warn('[Saigon Co.op CAPTCHA] Request failed', {
+      code: String(error?.code || '').slice(0, 60),
+      status: status >= 400 && status <= 599 ? status : 502,
+    });
+    return res.status(status >= 400 && status <= 599 ? status : 502)
+      .json({ success: false, error: String(error?.message || 'Không thể tải CAPTCHA Saigon Co.op.') });
+  }
+});
+
+app.post('/api/saigoncoop/lookup', async (req, res) => {
+  try {
+    const result = await submitSaigonCoopManualLookup({
+      state: req.body?.state,
+      lookupCode: req.body?.lookupCode,
+      captcha: req.body?.captcha,
+      sellerTaxCode: String(req.body?.sellerTaxCode || ''),
+      invoiceNo: String(req.body?.invoiceNo || ''),
+      invoiceSeries: String(req.body?.invoiceSeries || ''),
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    if (result.kind === 'pdf') {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(result.filename)}"`);
+      res.setHeader('X-Invoice-Filename', encodeURIComponent(result.filename));
+      return res.send(result.pdfBuffer);
+    }
+    return res.json({ success: true, kind: 'html', html: result.html });
+  } catch (error: any) {
+    const status = Number(error?.status);
+    console.warn('[Saigon Co.op lookup] Request failed', {
+      code: String(error?.code || '').slice(0, 60),
+      status: status >= 400 && status <= 599 ? status : 502,
+    });
+    return res.status(status >= 400 && status <= 599 ? status : 502)
+      .json({ success: false, error: String(error?.message || 'Không thể tra cứu hóa đơn Saigon Co.op.') });
   }
 });
 
