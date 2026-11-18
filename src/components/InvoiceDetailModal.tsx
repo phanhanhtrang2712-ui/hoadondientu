@@ -26,7 +26,14 @@ import {
   ProviderMeta 
 } from '../utils/multiTemplateRenderer';
 import { buildDirectLookupUrl, openVnptDirectPortal } from '../templates/templateUtils';
-import { easyInvoiceLookupPortals, easyInvoiceLookupUrl, lookupPortalForSeller, rememberThaiSonPortalForSeller } from '../utils/providerIdentity';
+import {
+  buildSaigonCoopPrefillUrl,
+  easyInvoiceLookupPortals,
+  easyInvoiceLookupUrl,
+  isSaigonCoopPortalUrl,
+  lookupPortalForSeller,
+  rememberThaiSonPortalForSeller
+} from '../utils/providerIdentity';
 import { ensureInvoiceItems, hasGenuineItems, extractTagValue, parseGDTInvoiceXml } from '../utils/xmlParser';
 import { resolveInvoiceProvider } from '../utils/providerRouting';
 import { loadOriginalInvoice } from '../services/originalInvoiceLoader';
@@ -811,6 +818,13 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
     const isGenericThaiSon = !recordedPortal || /^https?:\/\/(?:www\.)?einvoice\.vn(?:\/|$)/i.test(recordedPortal);
     const tenantUrl = sellerPortal && isGenericThaiSon ? sellerPortal : recordedPortal;
     const isSeparatePortal = actualProvider === 'IHOADON';
+    if (actualProvider === 'THAISON' && isSaigonCoopPortalUrl(tenantUrl)) {
+      const portalUrl = buildSaigonCoopPrefillUrl(
+        tenantUrl, extractedLookup.lookupCode || target.lookupCode
+      );
+      window.open(portalUrl || tenantUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
     // Open the actual issuer portal. No verified server-side PDF API exists
     // for every tenant; do not send these invoices to the generic Thai Son API.
     if (isSeparatePortal && /^https?:\/\//i.test(tenantUrl)) {
@@ -954,6 +968,7 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
     const candidate = xmlPortal || knownPortal || effectiveInvoice.lookupUrl || '';
     if (provider === 'THAISON' && (!candidate ||
         /^https?:\/\/(?:www\.)?einvoice\.vn(?:\/|$)/i.test(candidate))) return;
+    if (provider === 'THAISON' && isSaigonCoopPortalUrl(candidate)) return;
     // iHoaDon uses an independent provider workflow.
     // Thai Son tenant portals now use the original-document downloader.
     if (provider === 'IHOADON') return;
@@ -1047,6 +1062,10 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
   const thaiSonIssuerPortal = isThaiSonInvoice && lookupDetails.lookupUrl &&
     !/^https?:\/\/(?:www\.)?einvoice\.vn(?:\/|$)/i.test(lookupDetails.lookupUrl)
     ? lookupDetails.lookupUrl : '';
+  const isSaigonCoopPortal = isSaigonCoopPortalUrl(thaiSonIssuerPortal);
+  const saigonCoopPrefillUrl = buildSaigonCoopPrefillUrl(
+    thaiSonIssuerPortal, lookupDetails.lookupCode || effectiveInvoice.lookupCode
+  );
   const configureThaiSonPortal = () => {
     if (!effectiveInvoice?.nbmst) return;
     const proposed = window.prompt('Nhập URL cổng tra cứu hóa đơn chính thức của người bán (lưu dùng lại theo MST):', '');
@@ -1876,7 +1895,19 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
               <div className="inline-flex items-center gap-2 flex-wrap">
                 {thaiSonIssuerPortal ? (
                   <>
-                    {!originalProviderPdfUrl && !originalEasyInvoiceHtml && (
+                    {isSaigonCoopPortal ? (
+                      <div className="inline-flex items-center gap-2 flex-wrap">
+                        <a href={saigonCoopPrefillUrl || thaiSonIssuerPortal}
+                          target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md border border-cyan-700 text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900">
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          Mở cổng Saigon Co.op, nhập CAPTCHA
+                        </a>
+                        <span className="text-[11px] text-slate-400">
+                          Cài tiện ích HoangMySoft một lần để tự điền mã; CAPTCHA nhập thủ công.
+                        </span>
+                      </div>
+                    ) : !originalProviderPdfUrl && !originalEasyInvoiceHtml && (
                       <button type="button" onClick={handleViewOriginalProvider}
                         disabled={isDownloadingEasyInvoice}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md border border-cyan-700 text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900 disabled:opacity-60">

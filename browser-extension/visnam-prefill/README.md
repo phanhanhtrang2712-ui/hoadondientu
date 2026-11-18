@@ -1,15 +1,13 @@
-# VIN-HOADON: tiện ích điền mã tra cứu trên trang `tracuuhd`
+# Tiện ích điền mã tra cứu VIN-HOADON và Saigon Co.op
 
-Tiện ích này chỉ cần nếu muốn tiếp tục tra cứu thủ công ngay trên trang của
-nhà cung cấp. Để tải PDF trong HoangMySoft, dùng nút **Tải PDF gốc
-VIN-HOADON**; ứng dụng lấy mã số bí mật từ XML, yêu cầu người dùng nhập CAPTCHA
-hiển thị, rồi tải và xác minh PDF gốc. Không cần cài tiện ích cho luồng đó.
+Tiện ích Chrome/Edge này chỉ điền mã tra cứu vào đúng ô trên cổng nhà cung cấp.
+Nó không điền CAPTCHA, không gửi biểu mẫu và không tải hóa đơn.
 
-Tiện ích Chrome/Edge **cần cài một lần** nếu muốn HoangMySoft tự điền mã từ XML vào trang của nhà cung cấp. Trình duyệt không cho website HoangMySoft tự chỉnh form của một website khác.
+Ứng dụng web không thể tự sửa biểu mẫu của website khác. Cài tiện ích một lần:
 
 1. Tải thư mục `browser-extension/visnam-prefill` (gồm `manifest.json` và `visnam-prefill.js`).
 2. Mở `chrome://extensions` hoặc `edge://extensions`, bật Developer mode, chọn Load unpacked và chọn thư mục.
-3. Nếu cần tra cứu thủ công, bấm **Mở cổng VIN-HOADON**. URL mở trang tra cứu với mã từ `QuanLy_SoBaoMat` trong fragment `#hms_visnam_code=...`.
-4. Tiện ích chỉ điền ô mã tra cứu có thể xác định an toàn, không điền CAPTCHA. Nếu giao diện đổi hoặc không rõ ô mã, tiện ích không tự điền.
+3. Với VIN-HOADON, bấm **Mở cổng VIN-HOADON**. Tiện ích điền mã từ XML vào ô mã tra cứu.
+4. Với Saigon Co.op, bấm **Mở cổng Saigon Co.op, nhập CAPTCHA**. Tiện ích điền `Mã nhận HĐ`; nhập CAPTCHA và bấm **Tìm hóa đơn** trên cổng.
 
-Tiện ích chỉ điền ô mã tra cứu; không giải CAPTCHA, không bấm Tra cứu, không gửi thông tin sang máy chủ HoangMySoft và không tải PDF. Luồng tải PDF trong ứng dụng sẽ gửi mã CAPTCHA do người dùng nhập và tải kết quả đã được máy chủ đối chiếu với XML hóa đơn.
+Mã tra cứu chỉ được truyền trong fragment của URL, không gửi cùng HTTP request khi mở trang. Tiện ích xóa fragment sau khi điền thành công; CAPTCHA luôn do người dùng nhập.

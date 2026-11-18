@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "HoangMySoft - Điền mã VIN-HOADON",
-  "version": "1.0.0",
-  "description": "Điền mã tra cứu do người dùng cung cấp trên trang VIN-HOADON. Không tương tác CAPTCHA.",
+  "name": "HoangMySoft - Điền mã tra cứu hóa đơn",
+  "version": "1.1.0",
+  "description": "Điền mã tra cứu lên cổng VIN-HOADON và Saigon Co.op; không tương tác CAPTCHA.",
   "content_scripts": [
     {
       "matches": [
-        "https://tracuu.vin-hoadon.com/*"
+        "https://tracuu.vin-hoadon.com/*",
+        "https://saigoncoop.einvoice.com.vn/*"
       ],
       "js": [
         "visnam-prefill.js"
