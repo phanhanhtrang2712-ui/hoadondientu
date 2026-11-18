@@ -884,7 +884,6 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
       setEasyInvoiceDownloadStatus('Đã xác minh hóa đơn Saigon Co.op với dữ liệu XML.');
     } catch (error) {
       if (openInvoiceIdRef.current === target.id && originalLoadSequence.current === sequence) {
-        setSaigonCoopCaptcha(null);
         setSaigonCoopCaptchaError(error instanceof Error ? error.message : 'Không tra cứu được hóa đơn Saigon Co.op.');
       }
     } finally {

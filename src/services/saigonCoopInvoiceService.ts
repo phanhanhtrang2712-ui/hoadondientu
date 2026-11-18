@@ -276,19 +276,24 @@ export async function submitSaigonCoopManualLookup(params: {
   }
 
   const html = bytes.toString('utf8');
-  const verifiedHtml = verifiedThaiSonInvoiceHtml(
-    html, params.sellerTaxCode, params.invoiceNo, params.invoiceSeries
-  );
+  const verifiedHtml = verifiedThaiSonInvoiceHtml(html, params.sellerTaxCode, params.invoiceNo);
   if (verifiedHtml) return { kind: 'html', html: verifiedHtml };
 
   const $ = cheerio.load(html);
-  const providerMessage = (parseThaiSonForm(html).error || $('#listresult').text())
+  const returnedForm = parseThaiSonForm(html);
+  const providerMessage = (returnedForm.error || $('#listresult').text())
     .replace(/\s+/g, ' ').trim().slice(0, 240);
-  const isCaptchaError = /captcha|mã kiểm tra|mã xác thực|mã nhận hđ/i.test(providerMessage);
+  const isCaptchaError = /captcha|mã kiểm tra|mã xác thực/i.test(providerMessage);
+  if (returnedForm.formFound && returnedForm.field === 'MA_NHAN_HOA_DON' && !providerMessage) {
+    throw providerError(
+      'Cổng chưa mở hóa đơn và đã trả lại biểu mẫu tra cứu. Kiểm tra mã nhận HĐ, nhập lại CAPTCHA hoặc tải CAPTCHA mới.',
+      'LOOKUP_NOT_COMPLETED'
+    );
+  }
   throw providerError(
     isCaptchaError
       ? 'CAPTCHA không đúng hoặc đã hết hạn. Tải CAPTCHA mới rồi thử lại.'
-      : providerMessage || 'Cổng Saigon Co.op chưa trả hóa đơn khớp với MST và số hóa đơn đang mở.',
+      : providerMessage || 'Kết quả từ cổng Saigon Co.op không khớp MST và số hóa đơn đang mở; không hiển thị kết quả.',
     isCaptchaError ? 'CAPTCHA_REJECTED' : 'INVOICE_NOT_VERIFIED'
   );
 }

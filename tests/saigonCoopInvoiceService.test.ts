@@ -126,3 +126,43 @@ test('Saigon Co.op challenge cannot be reused with a different lookup code', asy
     globalThis.fetch = originalFetch;
   }
 });
+
+test('Saigon Co.op reports a returned search form as an incomplete lookup', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url === 'https://saigoncoop.einvoice.com.vn/') {
+      return new Response(lookupPage, {
+        headers: {
+          'content-type': 'text/html',
+          'set-cookie': 'ASP.NET_SessionId=session-value; Path=/',
+        },
+      });
+    }
+    if (url.startsWith('https://saigoncoop.einvoice.com.vn/DefaultCaptcha/Generate')) {
+      return new Response(new Uint8Array(100).fill(1), { headers: { 'content-type': 'image/png' } });
+    }
+    if (url === 'https://saigoncoop.einvoice.com.vn/xem-hoa-don' && init?.method === 'POST') {
+      return new Response(lookupPage, { headers: { 'content-type': 'text/html' } });
+    }
+    throw new Error('Unexpected provider request: ' + url);
+  };
+
+  try {
+    const challenge = await createSaigonCoopManualCaptcha('TESTCODE123');
+    await assert.rejects(submitSaigonCoopManualLookup({
+      state: challenge.state,
+      lookupCode: 'TESTCODE123',
+      captcha: 'USERANSWER',
+      sellerTaxCode: '0301175691-021',
+      invoiceNo: '0323797',
+      invoiceSeries: 'C26MCM',
+    }), error => {
+      assert.equal((error as { code?: string }).code, 'LOOKUP_NOT_COMPLETED');
+      assert.match((error as Error).message, /tải CAPTCHA mới/i);
+      return true;
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

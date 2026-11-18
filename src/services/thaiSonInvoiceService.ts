@@ -195,8 +195,7 @@ export function extractThaiSonDownloadTargets(html: string): ThaiSonDownloadTarg
 export function verifiedThaiSonInvoiceHtml(
   html: string,
   sellerTaxCode: string | undefined,
-  invoiceNo: string | undefined,
-  invoiceSeries?: string
+  invoiceNo: string | undefined
 ): string | undefined {
   if (!sellerTaxCode || !invoiceNo || html.length > 2_000_000) return;
   const $ = cheerio.load(html);
@@ -206,9 +205,8 @@ export function verifiedThaiSonInvoiceHtml(
   const sellerDigits = sellerTaxCode.replace(/\D/g, '');
   const textDigits = text.replace(/\D/g, '');
   const number = String(invoiceNo).replace(/^0+/, '') || '0';
-  const series = String(invoiceSeries || '').replace(/[^A-Za-z0-9]/g, '').toLowerCase();
   if ((!compact.includes(seller) && (!sellerDigits || !textDigits.includes(sellerDigits))) ||
-      !compact.includes(number) || (series && !compact.includes(series)) ||
+      !compact.includes(number) ||
       !/hóa\s*đơn|hoá\s*đơn|hoa\s*don|vat\s*invoice|tax\s*invoice/i.test(text)) {
     return;
   }
