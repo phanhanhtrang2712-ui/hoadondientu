@@ -1,6 +1,5 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import crypto from 'node:crypto';
 import { resolveInvoiceProvider } from '../src/utils/providerRouting';
 import { providerFromPortal, easyInvoiceLookupPortals, easyInvoiceLookupUrl, lookupPortalForSeller, rememberThaiSonPortalForSeller } from '../src/utils/providerIdentity';
 import { detectProvider } from '../src/services/invoice-engine/providerDetector';
@@ -12,7 +11,6 @@ import { parseThaiSonForm, extractThaiSonDownloadTargets, verifiedThaiSonInvoice
 import JSZip from 'jszip';
 import { OriginalInvoiceError } from '../src/services/invoice-engine/OriginalInvoiceError';
 import { EASY_INVOICE_PRINT_STYLE_ID, prepareEasyInvoiceHtml } from '../src/utils/easyInvoicePrint';
-import { verifyPmktBridgeToken } from '../src/utils/pmktBridgeAuth';
 import { downloadOriginalBkavPdf } from '../src/services/bkavInvoiceService';
 
 const realFetch = globalThis.fetch;
@@ -285,31 +283,6 @@ test('EasyInvoice print HTML keeps long item tables flowing across pages', () =>
   assert.match(prepared, /overflow:\s*visible\s*!important/);
   assert.equal((prepared.match(/<tr>/g) || []).length, 81, 'all invoice rows and the header must remain present');
   assert.equal(prepareEasyInvoiceHtml(prepared), prepared, 'reprocessing should not duplicate print overrides');
-});
-
-test('PMKT bridge JWT requires the expected HS256 issuer, audience, UUID subject, and expiry', () => {
-  const secret = 'integration-test-secret-0123456789';
-  const createToken = (claims: Record<string, unknown>, algorithm = 'HS256') => {
-    const header = Buffer.from(JSON.stringify({ alg: algorithm })).toString('base64url');
-    const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
-    const signingInput = `${header}.${payload}`;
-    const signature = crypto.createHmac('sha256', secret).update(signingInput).digest('base64url');
-    return `${signingInput}.${signature}`;
-  };
-  const standardClaims = {
-    sub: '550e8400-e29b-41d4-a716-446655440000',
-    iss: 'pmkt-v2',
-    aud: 'hoadondientu',
-    exp: Math.floor(Date.now() / 1000) + 60
-  };
-
-  assert.equal(verifyPmktBridgeToken(createToken(standardClaims), secret), true);
-  assert.equal(verifyPmktBridgeToken(createToken({ ...standardClaims, exp: 1 }), secret), false);
-  assert.equal(verifyPmktBridgeToken(createToken({ ...standardClaims, iss: 'untrusted' }), secret), false);
-  assert.equal(verifyPmktBridgeToken(createToken({ ...standardClaims, aud: 'other-app' }), secret), false);
-  assert.equal(verifyPmktBridgeToken(createToken({ ...standardClaims, sub: 'not-a-uuid' }), secret), false);
-  assert.equal(verifyPmktBridgeToken(createToken(standardClaims, 'none'), secret), false);
-  assert.equal(verifyPmktBridgeToken(createToken(standardClaims), 'too-short'), false);
 });
 
 const minvoice = new MinvoiceDriver();

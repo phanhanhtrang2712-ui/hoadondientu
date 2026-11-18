@@ -8043,41 +8043,9 @@ function mergeGdtInvoiceDetail(invoice, detail, exportedXml = "") {
   };
 }
 
-// src/utils/pmktBridgeAuth.ts
-import crypto2 from "crypto";
-function verifyPmktBridgeToken(token, secret = process.env.PMKT_BRIDGE_SECRET) {
-  if (!secret || Buffer.byteLength(secret, "utf8") < 32) return false;
-  const parts = token.split(".");
-  if (parts.length !== 3 || parts.some((part) => !/^[A-Za-z0-9_-]+$/.test(part))) return false;
-  try {
-    const header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
-    const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
-    if (header?.alg !== "HS256") return false;
-    if (typeof claims?.sub !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(claims.sub) || claims.iss !== "pmkt-v2" || !(claims.aud === "hoadondientu" || Array.isArray(claims.aud) && claims.aud.includes("hoadondientu")) || typeof claims.exp !== "number" || !Number.isFinite(claims.exp) || claims.exp <= Date.now() / 1e3 || claims.nbf !== void 0 && (typeof claims.nbf !== "number" || claims.nbf > Date.now() / 1e3)) {
-      return false;
-    }
-    const expected = crypto2.createHmac("sha256", secret).update(`${parts[0]}.${parts[1]}`).digest();
-    const actual = Buffer.from(parts[2], "base64url");
-    return actual.length === expected.length && crypto2.timingSafeEqual(actual, expected);
-  } catch {
-    return false;
-  }
-}
-
 // server.ts
 dotenv.config({ override: true });
 var app = express();
-function getPmktAppOrigin() {
-  const configuredOrigin = process.env.PMKT_APP_ORIGIN || "https://pmkt.nghiatingold.com";
-  try {
-    const url = new URL(configuredOrigin);
-    const isSecure = url.protocol === "https:";
-    const isLocalhost = url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname);
-    return url.origin === configuredOrigin && (isSecure || isLocalhost) ? url.origin : null;
-  } catch {
-    return null;
-  }
-}
 function resolvePort() {
   const portIdx = process.argv.indexOf("--port");
   if (portIdx !== -1 && process.argv[portIdx + 1]) {
@@ -8098,17 +8066,11 @@ var PORT = resolvePort();
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use((req, res, next) => {
-  const pmktOrigin = getPmktAppOrigin();
-  res.setHeader("Content-Security-Policy", `frame-ancestors ${pmktOrigin || "'none'"}`);
-  const vary = res.getHeader("Vary");
-  res.setHeader("Vary", vary ? `${vary}, Origin` : "Origin");
-  if (pmktOrigin && req.get("Origin") === pmktOrigin) {
-    res.setHeader("Access-Control-Allow-Origin", pmktOrigin);
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  }
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-gdt-cookie");
   if (req.method === "OPTIONS") {
-    return req.get("Origin") && req.get("Origin") !== pmktOrigin ? res.sendStatus(403) : res.sendStatus(204);
+    return res.sendStatus(204);
   }
   next();
 });
@@ -8123,19 +8085,6 @@ app.use((req, res, next) => {
     if (req.url.startsWith("/gdt") || req.url.startsWith("/invoice-downloader") || req.url.startsWith("/easyinvoice") || req.url.startsWith("/vnpt") || req.url.startsWith("/viettel") || req.url.startsWith("/vnpay") || req.url.startsWith("/foursi") || req.url.startsWith("/health") || req.url.startsWith("/selenium")) {
       req.url = "/api" + req.url;
     }
-  }
-  next();
-});
-app.use("/api", (req, res, next) => {
-  if (req.path === "/health") return next();
-  const secret = process.env.PMKT_BRIDGE_SECRET;
-  if (!getPmktAppOrigin() || !secret || Buffer.byteLength(secret, "utf8") < 32) {
-    return res.status(503).json({ success: false, message: "Ch\u01B0a c\u1EA5u h\xECnh \u0111\u1EA7y \u0111\u1EE7 t\xEDch h\u1EE3p PMKT tr\xEAn m\xE1y ch\u1EE7." });
-  }
-  const authorization = req.get("Authorization") || "";
-  const match = /^Bearer ([A-Za-z0-9._~-]+)$/.exec(authorization);
-  if (!match || !verifyPmktBridgeToken(match[1])) {
-    return res.status(401).json({ success: false, message: "Phi\xEAn t\xEDch h\u1EE3p PMKT kh\xF4ng h\u1EE3p l\u1EC7 ho\u1EB7c \u0111\xE3 h\u1EBFt h\u1EA1n." });
   }
   next();
 });
