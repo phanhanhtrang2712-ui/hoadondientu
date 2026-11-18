@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { jsPDF } from 'jspdf';
 import { MatbaoDriver, matbaoPdfProxyFromViewer, matbaoPdfUrlFromLookupResult } from '../src/services/invoice-engine/drivers/MatbaoDriver';
 import { OriginalInvoiceError } from '../src/services/invoice-engine/OriginalInvoiceError';
 import { detectProvider } from '../src/services/invoice-engine/providerDetector';
@@ -14,7 +15,7 @@ const rawXml = [
   '</DLHDon><MCCQT>M2-26-TEST</MCCQT></HDon>',
 ].join('');
 
-test('Matbao XML identifies solution provider and uses XML upload, not fkey', async () => {
+test('Matbao XML identifies solution provider and uses XML-derived FKey lookup', async () => {
   const driver = new MatbaoDriver();
   assert.equal(detectProvider(rawXml), 'MATBAO');
   assert.equal(resolveInvoiceProvider({rawXml}), 'MATBAO');
@@ -33,47 +34,30 @@ test('Matbao XML identifies solution provider and uses XML upload, not fkey', as
   assert.equal((await new InvoiceDownloaderManager().selectDriver(rawXml)).providerCode, 'MATBAO');
 });
 
-test('Matbao: missing verified upload endpoint provides official manual XML-upload fallback', async () => {
-  const previous = process.env.MATBAO_XML_UPLOAD_URL;
-  delete process.env.MATBAO_XML_UPLOAD_URL;
+test('Matbao: missing FKey returns official XML-lookup fallback', async () => {
+  const oldFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ fkey: null }), {
+    status: 200, headers: { 'Content-Type': 'application/json' }
+  });
   try {
     const driver = new MatbaoDriver();
     await assert.rejects(driver.fetchPdf(driver.extractInfo(rawXml)),
       (error: unknown) => {
         assert.ok(error instanceof OriginalInvoiceError);
         assert.equal(error.provider, 'MATBAO');
-        assert.equal(error.code, 'MATBAO_XML_UPLOAD_REQUIRED');
+        assert.equal(error.code, 'MATBAO_FKEY_NOT_FOUND');
         assert.equal(error.lookupUrl, 'https://matbao.in/tra-cuu-hoa-don');
         assert.match(error.message, /Tra cứu dùng file XML/);
         return true;
       });
   } finally {
-    if (previous === undefined) delete process.env.MATBAO_XML_UPLOAD_URL;
-    else process.env.MATBAO_XML_UPLOAD_URL = previous;
+    globalThis.fetch = oldFetch;
   }
 });
 
-test('Matbao: upload target must be HTTPS and belong to official Matbao/Mifi host', async () => {
-  const previous = process.env.MATBAO_XML_UPLOAD_URL;
-  process.env.MATBAO_XML_UPLOAD_URL = 'https://attacker.example/upload';
-  try {
-    const driver = new MatbaoDriver();
-    await assert.rejects(driver.fetchPdf(driver.extractInfo(rawXml)),
-      (error: unknown) => error instanceof OriginalInvoiceError &&
-        error.code === 'MATBAO_XML_UPLOAD_REQUIRED');
-  } finally {
-    if (previous === undefined) delete process.env.MATBAO_XML_UPLOAD_URL;
-    else process.env.MATBAO_XML_UPLOAD_URL = previous;
-  }
-});
-
-test('Matbao: fkey metadata lookup validates invoice identity before requesting PDF', async () => {
-  const oldUrl = process.env.MATBAO_FKEY_LOOKUP_URL;
-  const oldUpload = process.env.MATBAO_XML_UPLOAD_URL;
+test('Matbao: resolves FKey from XML metadata and validates invoice before requesting PDF', async () => {
   const oldFetch = globalThis.fetch;
   let pdfRequests = 0;
-  process.env.MATBAO_FKEY_LOOKUP_URL = 'https://matbao.in/api/test/fkey';
-  delete process.env.MATBAO_XML_UPLOAD_URL;
   globalThis.fetch = (async (request: RequestInfo | URL) => {
     const url = new URL(String(request));
     if (url.pathname.endsWith('/fkey')) {
@@ -81,25 +65,87 @@ test('Matbao: fkey metadata lookup validates invoice identity before requesting 
       assert.equal(url.searchParams.get('pattern'), '2');
       assert.equal(url.searchParams.get('serial'), 'C26MLS');
       assert.equal(url.searchParams.get('no'), '3622');
+      return new Response(JSON.stringify({ fkey: 'ABCDE12345' }), {
+        status: 200, headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    if (url.pathname === '/api/tra-cuu-hoa-don') {
+      assert.equal(url.searchParams.get('code'), 'ABCDE12345');
+      assert.equal(url.searchParams.get('keyword'), '');
+      assert.equal(url.searchParams.get('token'), 'captcha-token');
       return new Response(JSON.stringify({
         found: true, symbol: '2C26MLS', number: '9999',
-        pdfUrl: 'https://portal-group1.mifi.vn/downloadpdfca.aspx?keyinv=test'
+        viewerUrl: 'https://027098005024.matbao.in/api/ViewInvTemplate.aspx?idinv=a&fkey=b&comid=c&pattern=2&convert=0'
       }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     pdfRequests++;
     throw Error('PDF must not be downloaded when invoice metadata mismatches');
   }) as typeof fetch;
   try {
-    await assert.rejects(new MatbaoDriver().fetchPdf(new MatbaoDriver().extractInfo(rawXml)),
+    await assert.rejects(new MatbaoDriver().fetchPdf(
+      new MatbaoDriver().extractInfo(rawXml), { recaptchaToken: 'captcha-token' }
+    ),
       (error: unknown) => error instanceof OriginalInvoiceError &&
-        error.code === 'MATBAO_XML_UPLOAD_REQUIRED');
+        error.code === 'MATBAO_PDF_LINK_UNVERIFIED');
     assert.equal(pdfRequests, 0);
   } finally {
     globalThis.fetch = oldFetch;
-    if (oldUrl === undefined) delete process.env.MATBAO_FKEY_LOOKUP_URL;
-    else process.env.MATBAO_FKEY_LOOKUP_URL = oldUrl;
-    if (oldUpload === undefined) delete process.env.MATBAO_XML_UPLOAD_URL;
-    else process.env.MATBAO_XML_UPLOAD_URL = oldUpload;
+  }
+});
+
+test('Matbao: CAPTCHA response points users to the provider upload portal', async () => {
+  const oldFetch = globalThis.fetch;
+  globalThis.fetch = async (request: RequestInfo | URL) => {
+    const url = new URL(String(request));
+    if (url.pathname.endsWith('/fkey')) {
+      return new Response(JSON.stringify({ fkey: 'ABCDE12345' }), {
+        status: 200, headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    return new Response('captcha required', { status: 403 });
+  };
+  try {
+    await assert.rejects(new MatbaoDriver().fetchPdf(new MatbaoDriver().extractInfo(rawXml)),
+      (error: unknown) => error instanceof OriginalInvoiceError &&
+        error.code === 'MATBAO_CAPTCHA_REQUIRED' &&
+        error.lookupUrl === 'https://matbao.in/tra-cuu-hoa-don');
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
+test('Matbao: fkey lookup downloads and verifies the returned original PDF', async () => {
+  const oldFetch = globalThis.fetch;
+  const expectedPdf = new jsPDF();
+  expectedPdf.text('HOA DON MST 027098005024 C26MLS SO 3622', 10, 20);
+  const pdfBytes = Buffer.from(expectedPdf.output('arraybuffer'));
+  let calls = 0;
+  globalThis.fetch = async (request: RequestInfo | URL) => {
+    calls++;
+    const url = new URL(String(request));
+    if (url.pathname.endsWith('/fkey')) {
+      return new Response(JSON.stringify({ fkey: 'ABCDE12345' }), {
+        status: 200, headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    if (url.pathname === '/api/tra-cuu-hoa-don') {
+      return new Response(JSON.stringify({
+        found: true, symbol: '2C26MLS', number: '3622',
+        viewerUrl: 'https://027098005024.matbao.in/api/ViewInvTemplate.aspx?' +
+          'idinv=invoice-id&fkey=ABCDE12345&comid=company-id&pattern=2&convert=0'
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    assert.equal(url.pathname, '/api/tra-cuu-hoa-don/pdf');
+    return new Response(pdfBytes, { status: 200, headers: { 'Content-Type': 'application/pdf' } });
+  };
+  try {
+    const result = await new MatbaoDriver().fetchPdf(new MatbaoDriver().extractInfo(rawXml));
+    assert.equal(calls, 3);
+    assert.equal(result.isFallback, false);
+    assert.equal(result.contentType, 'application/pdf');
+    assert.equal(result.pdfBuffer?.subarray(0, 5).toString('latin1'), '%PDF-');
+  } finally {
+    globalThis.fetch = oldFetch;
   }
 });
 
