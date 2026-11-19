@@ -1722,7 +1722,7 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
             <span>HĐĐT Chuẩn Tổng cục Thuế (NĐ 123/2020/NĐ-CP & TT 78/2021/TT-BTC)</span>
           </div>
 
-          <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="ml-auto flex items-center gap-2.5 flex-wrap">
             {/* 1. Nếu có file PDF gốc đã nạp, hiển thị nút Tải PDF gốc đã lưu */}
             {originalProviderZipUrl && (
               <a href={originalProviderZipUrl}
