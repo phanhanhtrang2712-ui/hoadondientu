@@ -32,6 +32,17 @@ test('Correct provider PDF must match seller, invoice number and series', async 
   })).ok, false);
 });
 
+test('Provider PDF may omit invoice series when seller MST and invoice number match', async () => {
+  const pdf = new jsPDF();
+  pdf.text('HOA DON GIA TRI GIA TANG', 20, 20);
+  pdf.text('MST: 0301175691021', 20, 32);
+  pdf.text('So: 323797', 20, 44);
+  const bytes = Buffer.from(pdf.output('arraybuffer'));
+  const result = await verifyIssuerInvoiceBytes(bytes, 'application/pdf', identity);
+  assert.equal(result.ok, true);
+  assert.match(result.reason, /MST người bán và số hóa đơn khớp/);
+});
+
 test('User guide PDF must not be cached as an original', async () => {
   const pdf = new jsPDF();
   pdf.text('HUONG DAN SU DUNG PHAN MEM', 20, 20);

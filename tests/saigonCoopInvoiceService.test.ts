@@ -94,6 +94,50 @@ test('Saigon Co.op manual challenge keeps portal cookies and submits only the us
   }
 });
 
+test('Saigon Co.op HTML result remains valid when the provider omits invoice series', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url === 'https://saigoncoop.einvoice.com.vn/') {
+      return new Response(lookupPage, {
+        headers: {
+          'content-type': 'text/html',
+          'set-cookie': 'ASP.NET_SessionId=session-value; Path=/',
+        },
+      });
+    }
+    if (url.startsWith('https://saigoncoop.einvoice.com.vn/DefaultCaptcha/Generate')) {
+      return new Response(new Uint8Array(100).fill(1), {
+        headers: { 'content-type': 'image/png' },
+      });
+    }
+    if (url === 'https://saigoncoop.einvoice.com.vn/xem-hoa-don') {
+      return new Response(`<!doctype html><html><body>
+        <h1>HÓA ĐƠN GIÁ TRỊ GIA TĂNG</h1>
+        <p>MST người bán: 0301175691021</p>
+        <p>Số hóa đơn: 323797</p>
+        <table><tr><th>Tên hàng</th></tr><tr><td>Dịch vụ</td></tr><tr><td>Tổng cộng</td></tr></table>
+      </body></html>`, { headers: { 'content-type': 'text/html' } });
+    }
+    throw new Error('Unexpected provider request: ' + url);
+  };
+
+  try {
+    const challenge = await createSaigonCoopManualCaptcha('TESTCODE123');
+    const result = await submitSaigonCoopManualLookup({
+      state: challenge.state,
+      lookupCode: 'TESTCODE123',
+      captcha: 'USERANSWER',
+      sellerTaxCode: '0301175691-021',
+      invoiceNo: '0323797',
+      invoiceSeries: 'C26MCM',
+    });
+    assert.equal(result.kind, 'html');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('Saigon Co.op challenge cannot be reused with a different lookup code', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
