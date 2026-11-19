@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { jsPDF } from 'jspdf';
 import {
   createSaigonCoopManualCaptcha,
   submitSaigonCoopManualLookup,
@@ -133,6 +134,109 @@ test('Saigon Co.op HTML result remains valid when the provider omits invoice ser
       invoiceSeries: 'C26MCM',
     });
     assert.equal(result.kind, 'html');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Saigon Co.op follows and verifies an invoice PDF link returned by the lookup page', async () => {
+  const originalFetch = globalThis.fetch;
+  const pdf = new jsPDF();
+  pdf.text('HOA DON GIA TRI GIA TANG', 20, 20);
+  pdf.text('MST: 0301175691021', 20, 32);
+  pdf.text('Ky hieu: C26MCM', 20, 44);
+  pdf.text('So: 323797', 20, 56);
+  const pdfBytes = Buffer.from(pdf.output('arraybuffer'));
+  const requests: string[] = [];
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url === 'https://saigoncoop.einvoice.com.vn/') {
+      return new Response(lookupPage, {
+        headers: {
+          'content-type': 'text/html',
+          'set-cookie': 'ASP.NET_SessionId=session-value; Path=/',
+        },
+      });
+    }
+    if (url.startsWith('https://saigoncoop.einvoice.com.vn/DefaultCaptcha/Generate')) {
+      return new Response(new Uint8Array(100).fill(1), {
+        headers: { 'content-type': 'image/png' },
+      });
+    }
+    if (url === 'https://saigoncoop.einvoice.com.vn/xem-hoa-don') {
+      return new Response('<html><body><a href="/invoice/download/123.pdf">Tải PDF hóa đơn</a></body></html>', {
+        headers: { 'content-type': 'text/html' },
+      });
+    }
+    if (url === 'https://saigoncoop.einvoice.com.vn/invoice/download/123.pdf') {
+      return new Response(pdfBytes, { headers: { 'content-type': 'application/pdf' } });
+    }
+    throw new Error('Unexpected provider request: ' + url);
+  };
+
+  try {
+    const challenge = await createSaigonCoopManualCaptcha('TESTCODE123');
+    const result = await submitSaigonCoopManualLookup({
+      state: challenge.state,
+      lookupCode: 'TESTCODE123',
+      captcha: 'USERANSWER',
+      sellerTaxCode: '0301175691-021',
+      invoiceNo: '0323797',
+      invoiceSeries: 'C26MCM',
+    });
+    assert.equal(result.kind, 'pdf');
+    assert.ok(requests.includes('https://saigoncoop.einvoice.com.vn/invoice/download/123.pdf'));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Saigon Co.op does not return a linked PDF when its identity does not match', async () => {
+  const originalFetch = globalThis.fetch;
+  const pdf = new jsPDF();
+  pdf.text('HOA DON GIA TRI GIA TANG', 20, 20);
+  pdf.text('MST: 0301175691021', 20, 32);
+  pdf.text('So: 9999999', 20, 44);
+  const pdfBytes = Buffer.from(pdf.output('arraybuffer'));
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url === 'https://saigoncoop.einvoice.com.vn/') {
+      return new Response(lookupPage, {
+        headers: {
+          'content-type': 'text/html',
+          'set-cookie': 'ASP.NET_SessionId=session-value; Path=/',
+        },
+      });
+    }
+    if (url.startsWith('https://saigoncoop.einvoice.com.vn/DefaultCaptcha/Generate')) {
+      return new Response(new Uint8Array(100).fill(1), {
+        headers: { 'content-type': 'image/png' },
+      });
+    }
+    if (url === 'https://saigoncoop.einvoice.com.vn/xem-hoa-don') {
+      return new Response('<html><body><a href="/invoice/download/123.pdf">Tải PDF hóa đơn</a></body></html>', {
+        headers: { 'content-type': 'text/html' },
+      });
+    }
+    if (url === 'https://saigoncoop.einvoice.com.vn/invoice/download/123.pdf') {
+      return new Response(pdfBytes, { headers: { 'content-type': 'application/pdf' } });
+    }
+    throw new Error('Unexpected provider request: ' + url);
+  };
+
+  try {
+    const challenge = await createSaigonCoopManualCaptcha('TESTCODE123');
+    await assert.rejects(submitSaigonCoopManualLookup({
+      state: challenge.state,
+      lookupCode: 'TESTCODE123',
+      captcha: 'USERANSWER',
+      sellerTaxCode: '0301175691-021',
+      invoiceNo: '0323797',
+      invoiceSeries: 'C26MCM',
+    }), { code: 'INVOICE_NOT_VERIFIED' });
   } finally {
     globalThis.fetch = originalFetch;
   }
